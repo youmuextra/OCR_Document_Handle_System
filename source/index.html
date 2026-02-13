@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>政务公文智能管理平台</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { background-color: #f5f7fa; margin: 0; font-family: "Helvetica Neue",Helvetica,"PingFang SC",Arial,sans-serif; }
+        .header { background-color: #409EFF; color: white; padding: 15px 20px; font-size: 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
+        .stats-card { text-align: center; padding: 20px; }
+        .stats-num { font-size: 24px; font-weight: bold; color: #409EFF; margin-top: 10px; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; }
+        .mt-20 { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <span>🏛️ 政务公文智能管理平台</span>
+            <el-button type="success" @click="handleSimulateCapture" :loading="capturing">📸 模拟抓拍录入</el-button>
+        </div>
+
+        <div class="container">
+            <el-row :gutter="20">
+                <el-col :span="6" v-for="(val, label) in statsMap" :key="label">
+                    <el-card shadow="hover" class="stats-card">
+                        <div>{{ label }}</div>
+                        <div class="stats-num">{{ val }}</div>
+                    </el-card>
+                </el-col>
+            </el-row>
+
+            <el-card class="mt-20">
+                <template #header>
+                    <div class="card-header">
+                        <span>📄 公文流转列表</span>
+                        <el-button type="primary" link @click="fetchData">🔄 刷新数据</el-button>
+                    </div>
+                </template>
+                
+                <el-table :data="docList" stripe style="width: 100%" v-loading="loading">
+                    <el-table-column prop="id" label="ID" width="70"></el-table-column>
+                    <el-table-column prop="title" label="标题" show-overflow-tooltip></el-table-column>
+                    <el-table-column prop="doc_num" label="字号" width="180"></el-table-column>
+                    <el-table-column prop="doc_date" label="发文日期" width="150"></el-table-column>
+                    <el-table-column prop="status" label="状态" width="100">
+                        <template #default="scope">
+                            <el-tag :type="scope.row.status === '已签收' ? 'success' : 'warning'">
+                                {{ scope.row.status }}
+                            </el-tag>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="150">
+                        <template #default="scope">
+                            <el-button 
+                                v-if="scope.row.status === '待签收'" 
+                                size="small" 
+                                type="primary" 
+                                @click="handleSign(scope.row.id)"
+                            >确认签收</el-button>
+                            <el-button size="small" @click="showDetail(scope.row)">详情</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </el-card>
+        </div>
+
+        <el-dialog v-model="detailVisible" title="公文详情" width="50%">
+            <div v-if="currentDoc">
+                <p><strong>标题：</strong> {{ currentDoc.title }}</p>
+                <p><strong>全文内容：</strong></p>
+                <el-input type="textarea" :rows="10" v-model="currentDoc.raw_content" readonly></el-input>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        const { ElMessage } = ElementPlus;
+
+        createApp({
+            setup() {
+                const docList = ref([]);
+                const statsMap = ref({ "总数": 0, "待签收": 0, "已签收": 0, "签收率": "0%" });
+                const loading = ref(false);
+                const capturing = ref(false);
+                const detailVisible = ref(false);
+                const currentDoc = ref(null);
+
+                const API_BASE = "http://127.0.0.1:5000/api/v1";
+
+                // 获取所有数据
+                const fetchData = async () => {
+                    loading.ref = true;
+                    try {
+                        const [listRes, statsRes] = await Promise.all([
+                            axios.get(`${API_BASE}/documents`),
+                            axios.get(`${API_BASE}/stats`)
+                        ]);
+                        docList.value = listRes.data.data;
+                        const s = statsRes.data.data;
+                        statsMap.value = {
+                            "总数": s.total_count,
+                            "待签收": s.pending_count,
+                            "已签收": s.signed_count,
+                            "签收率": s.completion_rate
+                        };
+                    } catch (err) {
+                        ElMessage.error("获取数据失败，请检查后端是否启动");
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                // 模拟抓拍
+                const handleSimulateCapture = async () => {
+                    capturing.value = true;
+                    try {
+                        const res = await axios.post(`${API_BASE}/simulate_capture`);
+                        ElMessage.success("抓拍并识别成功！");
+                        fetchData();
+                    } catch (err) {
+                        ElMessage.error("模拟抓拍失败：" + (err.response?.data?.detail || "未知错误"));
+                    } finally {
+                        capturing.value = false;
+                    }
+                };
+
+                // 签收操作
+                const handleSign = async (id) => {
+                    try {
+                        await axios.post(`${API_BASE}/documents/${id}/sign`);
+                        ElMessage.success("签收成功");
+                        fetchData();
+                    } catch (err) {
+                        ElMessage.error("签收失败");
+                    }
+                };
+
+                const showDetail = (doc) => {
+                    currentDoc.value = doc;
+                    detailVisible.value = true;
+                };
+
+                onMounted(fetchData);
+
+                return { docList, statsMap, loading, capturing, detailVisible, currentDoc, fetchData, handleSimulateCapture, handleSign, showDetail };
+            }
+        }).use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>

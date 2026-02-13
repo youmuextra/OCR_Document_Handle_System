@@ -1,0 +1,8 @@
+1. 
+cd D:\ocr_sys_proj\source
+
+2. 
+python ai_service/server.py
+
+3.
+python main.py
