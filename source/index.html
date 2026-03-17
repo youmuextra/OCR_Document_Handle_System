@@ -3,155 +3,286 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>政务公文智能管理平台</title>
+    <title>政务公文智能收发系统</title>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <style>
-        body { background-color: #f5f7fa; margin: 0; font-family: "Helvetica Neue",Helvetica,"PingFang SC",Arial,sans-serif; }
-        .header { background-color: #409EFF; color: white; padding: 15px 20px; font-size: 20px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
-        .stats-card { text-align: center; padding: 20px; }
-        .stats-num { font-size: 24px; font-weight: bold; color: #409EFF; margin-top: 10px; }
+        body { margin: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; background-color: #f5f7fa; }
+        .login-wrapper { height: 100vh; display: flex; justify-content: center; align-items: center; background: #2d3a4b; }
+        .login-card { width: 400px; padding: 20px; border-radius: 8px; }
+        .main-layout { height: 100vh; }
+        .el-aside { background-color: #304156; color: white; transition: width 0.3s; }
+        .el-menu { border-right: none; }
+        .header-bar { background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; border-bottom: 1px solid #e6e6e6; }
+        .content-area { padding: 20px; overflow-y: auto; }
         .card-header { display: flex; justify-content: space-between; align-items: center; }
         .mt-20 { margin-top: 20px; }
     </style>
 </head>
 <body>
-    <div id="app">
-        <div class="header">
-            <span>🏛️ 政务公文智能管理平台</span>
-            <el-button type="success" @click="handleSimulateCapture" :loading="capturing">📸 模拟抓拍录入</el-button>
-        </div>
-
-        <div class="container">
-            <el-row :gutter="20">
-                <el-col :span="6" v-for="(val, label) in statsMap" :key="label">
-                    <el-card shadow="hover" class="stats-card">
-                        <div>{{ label }}</div>
-                        <div class="stats-num">{{ val }}</div>
-                    </el-card>
-                </el-col>
-            </el-row>
-
-            <el-card class="mt-20">
-                <template #header>
-                    <div class="card-header">
-                        <span>📄 公文流转列表</span>
-                        <el-button type="primary" link @click="fetchData">🔄 刷新数据</el-button>
-                    </div>
-                </template>
-                
-                <el-table :data="docList" stripe style="width: 100%" v-loading="loading">
-                    <el-table-column prop="id" label="ID" width="70"></el-table-column>
-                    <el-table-column prop="title" label="标题" show-overflow-tooltip></el-table-column>
-                    <el-table-column prop="doc_num" label="字号" width="180"></el-table-column>
-                    <el-table-column prop="doc_date" label="发文日期" width="150"></el-table-column>
-                    <el-table-column prop="status" label="状态" width="100">
-                        <template #default="scope">
-                            <el-tag :type="scope.row.status === '已签收' ? 'success' : 'warning'">
-                                {{ scope.row.status }}
-                            </el-tag>
-                        </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="150">
-                        <template #default="scope">
-                            <el-button 
-                                v-if="scope.row.status === '待签收'" 
-                                size="small" 
-                                type="primary" 
-                                @click="handleSign(scope.row.id)"
-                            >确认签收</el-button>
-                            <el-button size="small" @click="showDetail(scope.row)">详情</el-button>
-                        </template>
-                    </el-table-column>
-                </el-table>
-            </el-card>
-        </div>
-
-        <el-dialog v-model="detailVisible" title="公文详情" width="50%">
-            <div v-if="currentDoc">
-                <p><strong>标题：</strong> {{ currentDoc.title }}</p>
-                <p><strong>全文内容：</strong></p>
-                <el-input type="textarea" :rows="10" v-model="currentDoc.raw_content" readonly></el-input>
-            </div>
-        </el-dialog>
+<div id="app">
+    <div v-if="!isLoggedIn" class="login-wrapper">
+        <el-card class="login-card">
+            <template #header><h3 style="text-align: center; margin: 0;">系统登录</h3></template>
+            <el-form label-position="top">
+                <el-form-item label="用户名">
+                    <el-input v-model="loginForm.username" placeholder="请输入用户名" @keyup.enter="handleLogin" />
+                </el-form-item>
+                <el-form-item label="密码">
+                    <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password @keyup.enter="handleLogin" />
+                </el-form-item>
+                <el-button type="primary" style="width: 100%; margin-top: 10px;" @click="handleLogin" :loading="loading">立即登录</el-button>
+            </el-form>
+        </el-card>
     </div>
 
-    <script>
-        const { createApp, ref, onMounted } = Vue;
-        const { ElMessage } = ElementPlus;
+    <el-container v-else class="main-layout">
+        <el-aside width="240px">
+            <div style="padding: 20px; text-align: center; font-weight: bold; font-size: 18px; color: #409eff;">
+                公文管理系统
+            </div>
+            <el-menu background-color="#304156" text-color="#bfcbd9" active-text-color="#409eff" :default-active="activeMenu" @select="handleMenuSelect">
+                <el-menu-item index="stats">📊 首页数据统计</el-menu-item>
+                <el-menu-item index="incoming">📥 收文管理 (OCR)</el-menu-item>
+                <el-menu-item index="outgoing">📤 发文登记系统</el-menu-item>
+                <el-divider style="margin: 10px 0; border-color: #4f5f71;"></el-divider>
+                <el-menu-item index="logout">🚪 退出登录</el-menu-item>
+            </el-menu>
+        </el-aside>
 
-        createApp({
-            setup() {
-                const docList = ref([]);
-                const statsMap = ref({ "总数": 0, "待签收": 0, "已签收": 0, "签收率": "0%" });
-                const loading = ref(false);
-                const capturing = ref(false);
-                const detailVisible = ref(false);
-                const currentDoc = ref(null);
+        <el-container>
+            <el-header class="header-bar" height="60px">
+                <el-breadcrumb separator="/">
+                    <el-breadcrumb-item>{{ menuTitle }}</el-breadcrumb-item>
+                </el-breadcrumb>
+                <div class="user-info">
+                    <el-tag>当前用户: {{ loginForm.username }}</el-tag>
+                </div>
+            </el-header>
 
-                const API_BASE = "http://127.0.0.1:5000/api/v1";
+            <el-main class="content-area">
 
-                // 获取所有数据
-                const fetchData = async () => {
-                    loading.ref = true;
-                    try {
-                        const [listRes, statsRes] = await Promise.all([
-                            axios.get(`${API_BASE}/documents`),
-                            axios.get(`${API_BASE}/stats`)
-                        ]);
-                        docList.value = listRes.data.data;
-                        const s = statsRes.data.data;
-                        statsMap.value = {
-                            "总数": s.total_count,
-                            "待签收": s.pending_count,
-                            "已签收": s.signed_count,
-                            "签收率": s.completion_rate
-                        };
-                    } catch (err) {
-                        ElMessage.error("获取数据失败，请检查后端是否启动");
-                    } finally {
-                        loading.value = false;
+                <div v-if="activeMenu === 'stats'">
+                    <el-row :gutter="20">
+                        <el-col :span="8">
+                            <el-card shadow="hover">
+                                <template #header>收文总数</template>
+                                <h1 style="color: #409eff">{{ stats.total_docs || 0 }}</h1>
+                            </el-card>
+                        </el-col>
+                        <el-col :span="8">
+                            <el-card shadow="hover">
+                                <template #header>发文总数</template>
+                                <h1 style="color: #67c23a">{{ stats.total_dispatches || 0 }}</h1>
+                            </el-card>
+                        </el-col>
+                        <el-col :span="8">
+                            <el-card shadow="hover">
+                                <template #header>待办事项</template>
+                                <h1 style="color: #f56c6c">{{ stats.pending_docs || 0 }}</h1>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </div>
+
+                <div v-if="activeMenu === 'incoming'">
+                    <el-card>
+                        <template #header>
+                            <div class="card-header">
+                                <span>待处理收文列表</span>
+                                <el-button type="primary" @click="simulateCapture">📸 模拟抓拍识别</el-button>
+                            </div>
+                        </template>
+                        <el-table :data="docList" stripe style="width: 100%">
+                            <el-table-column prop="doc_num" label="文号" width="180" />
+                            <el-table-column prop="title" label="标题" />
+                            <el-table-column prop="status" label="状态" width="100">
+                                <template #default="scope">
+                                    <el-tag :type="scope.row.status === '待签收' ? 'warning' : 'success'">{{ scope.row.status }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作", width="150">
+                                <template #default="scope">
+                                    <el-button
+                                        v-if="scope.row.status === '待签收'"
+                                        size="small"
+                                        type="success"
+                                        @click="handleSign(scope.row.id)">签收</el-button>
+                                    <el-button size="small" @click="showDocDetail(scope.row)">详情</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </el-card>
+                </div>
+
+                <div v-if="activeMenu === 'outgoing'">
+                    <el-row :gutter="20">
+                        <el-col :span="10">
+                            <el-card header="发文登记表单">
+                                <el-form :model="dispatchForm" label-width="100px">
+                                    <el-form-item label="发文字号"><el-input v-model="dispatchForm.doc_num" placeholder="如: 办字〔2026〕5号" /></el-form-item>
+                                    <el-form-item label="公文标题"><el-input v-model="dispatchForm.title" /></el-form-item>
+                                    <el-form-item label="发往单位"><el-input v-model="dispatchForm.receiver_unit" /></el-form-item>
+                                    <el-form-item label="经办人"><el-input v-model="dispatchForm.handler" /></el-form-item>
+                                    <el-form-item label="发文日期">
+                                        <el-date-picker v-model="dispatchForm.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+                                    </el-form-item>
+                                    <el-form-item label="备注"><el-input type="textarea" v-model="dispatchForm.remark" /></el-form-item>
+                                    <el-form-item>
+                                        <el-button type="success" @click="submitDispatch">提交发文登记</el-button>
+                                    </el-form-item>
+                                </el-form>
+                            </el-card>
+                        </el-col>
+                        <el-col :span="14">
+                            <el-card header="近期发文记录">
+                                <el-table :data="dispatchList" border>
+                                    <el-table-column prop="date" label="日期" width="120" />
+                                    <el-table-column prop="doc_num" label="文号" width="150" />
+                                    <el-table-column prop="title" label="标题" />
+                                    <el-table-column prop="handler" label="经办人" width="100" />
+                                </el-table>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </div>
+
+            </el-main>
+        </el-container>
+    </el-container>
+
+    <el-dialog v-model="detailVisible" title="收文详细内容" width="600px">
+        <div v-if="currentDoc">
+            <p><strong>标题：</strong>{{ currentDoc.title }}</p>
+            <p><strong>内容全文：</strong></p>
+            <el-input type="textarea" :rows="12" v-model="currentDoc.raw_content" readonly />
+        </div>
+    </el-dialog>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+    const API_BASE = "http://127.0.0.1:5000/api/v1";
+
+    createApp({
+        setup() {
+            const isLoggedIn = ref(false);
+            const loading = ref(false);
+            const activeMenu = ref('stats');
+            const loginForm = ref({ username: '', password: '' });
+            const dispatchForm = ref({ doc_num: '', title: '', receiver_unit: '', handler: '', date: '', remark: '' });
+
+            const docList = ref([]);
+            const dispatchList = ref([]);
+            const stats = ref({ total_docs: 0, total_dispatches: 0, pending_docs: 0 });
+
+            const detailVisible = ref(false);
+            const currentDoc = ref(null);
+
+            const menuTitle = computed(() => {
+                const maps = { 'stats': '首页数据统计', 'incoming': '收文管理 (OCR)', 'outgoing': '发文登记系统' };
+                return maps[activeMenu.value] || '管理后台';
+            });
+
+            // 登录处理
+            const handleLogin = async () => {
+                if (!loginForm.value.username || !loginForm.value.password) {
+                    return ElementPlus.ElMessage.warning("请填写完整登录信息");
+                }
+                loading.value = true;
+                try {
+                    const res = await axios.post(`${API_BASE}/login`, loginForm.value);
+                    if (res.data.code === 200) {
+                        isLoggedIn.value = true;
+                        ElementPlus.ElMessage.success("登录成功");
+                        fetchStats();
                     }
-                };
+                } catch (err) {
+                    ElementPlus.ElMessage.error("登录失败：" + (err.response?.data?.detail || "服务器未连接"));
+                } finally {
+                    loading.value = false;
+                }
+            };
 
-                // 模拟抓拍
-                const handleSimulateCapture = async () => {
-                    capturing.value = true;
-                    try {
-                        const res = await axios.post(`${API_BASE}/simulate_capture`);
-                        ElMessage.success("抓拍并识别成功！");
-                        fetchData();
-                    } catch (err) {
-                        ElMessage.error("模拟抓拍失败：" + (err.response?.data?.detail || "未知错误"));
-                    } finally {
-                        capturing.value = false;
-                    }
-                };
+            // 菜单切换
+            const handleMenuSelect = (index) => {
+                if (index === 'logout') {
+                    isLoggedIn.value = false;
+                    return;
+                }
+                activeMenu.value = index;
+                if (index === 'stats') fetchStats();
+                if (index === 'incoming') fetchDocs();
+                if (index === 'outgoing') fetchDispatches();
+            };
 
-                // 签收操作
-                const handleSign = async (id) => {
-                    try {
-                        await axios.post(`${API_BASE}/documents/${id}/sign`);
-                        ElMessage.success("签收成功");
-                        fetchData();
-                    } catch (err) {
-                        ElMessage.error("签收失败");
-                    }
-                };
+            // 获取数据
+            const fetchStats = async () => {
+                try {
+                    const res = await axios.get(`${API_BASE}/stats`);
+                    stats.value = res.data.data;
+                } catch (e) { console.error("获取统计失败"); }
+            };
 
-                const showDetail = (doc) => {
-                    currentDoc.value = doc;
-                    detailVisible.value = true;
-                };
+            const fetchDocs = async () => {
+                const res = await axios.get(`${API_BASE}/documents`);
+                docList.value = res.data.data;
+            };
 
-                onMounted(fetchData);
+            const fetchDispatches = async () => {
+                const res = await axios.get(`${API_BASE}/dispatches`);
+                dispatchList.value = res.data.data;
+            };
 
-                return { docList, statsMap, loading, capturing, detailVisible, currentDoc, fetchData, handleSimulateCapture, handleSign, showDetail };
-            }
-        }).use(ElementPlus).mount('#app');
-    </script>
+            // OCR抓拍模拟
+            const simulateCapture = async () => {
+                try {
+                    await axios.post(`${API_BASE}/simulate_capture`);
+                    ElementPlus.ElMessage.success("抓拍并识别成功");
+                    fetchDocs();
+                    fetchStats();
+                } catch (e) { ElementPlus.ElMessage.error("识别流程故障"); }
+            };
+
+            // 提交发文
+            const submitDispatch = async () => {
+                try {
+                    await axios.post(`${API_BASE}/dispatches`, dispatchForm.value);
+                    ElementPlus.ElMessage.success("发文登记成功");
+                    dispatchForm.value = { doc_num: '', title: '', receiver_unit: '', handler: '', date: '', remark: '' };
+                    fetchDispatches();
+                    fetchStats();
+                } catch (e) { ElementPlus.ElMessage.error("提交失败"); }
+            };
+
+            const showDocDetail = (doc) => {
+                currentDoc.value = doc;
+                detailVisible.value = true;
+            };
+
+            // 1. 签收功能：点击后改变公文状态
+            const handleSign = async (id) => {
+                try {
+                    // 调用后端更新状态接口
+                    await axios.post(`${API_BASE}/documents/${id}/sign`);
+                    ElementPlus.ElMessage.success("公文已签收");
+                    fetchDocs();   // 刷新列表
+                    fetchStats();  // 刷新顶部的统计数字
+                } catch (e) {
+                    ElementPlus.ElMessage.error("签收失败");
+                }
+            };
+
+            return {
+                isLoggedIn, loading, activeMenu, menuTitle, loginForm, dispatchForm,
+                docList, dispatchList, stats, detailVisible, currentDoc,
+                handleLogin, handleMenuSelect, simulateCapture, submitDispatch, showDocDetail,
+                handleSign
+            };
+        }
+    }).use(ElementPlus).mount('#app');
+</script>
 </body>
 </html>

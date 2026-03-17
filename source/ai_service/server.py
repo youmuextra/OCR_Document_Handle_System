@@ -8,14 +8,17 @@ engine = DocumentOCREngine()
 
 @app.post("/predict")
 async def predict_document(file: UploadFile = File(...)):
-    # 读取上传的文件内容
     content = await file.read()
-
-    # 调用推理引擎
     try:
         results = engine.inference(content)
+        # --- 添加这行调试打印 ---
+        print(f"DEBUG AI ENGINE OUTPUT: {results}")
+        # -----------------------
         return {"code": 200, "data": results, "msg": "success"}
     except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()  # 获取详细的错误堆栈
+        print(f"CRITICAL ERROR:\n{error_msg}")  # 在黑窗口打印
         return {"code": 500, "msg": str(e)}
 
 

@@ -4,8 +4,10 @@ from typing import List
 
 # 导入数据库配置与模型
 from ..models.database import get_db
-from ..models.document import Document
+from ..models.document import Document, User, Dispatch
 from ..core.workflow import WorkflowManager
+
+import os
 
 router = APIRouter()
 
@@ -20,7 +22,7 @@ def simulate_capture(db: Session = Depends(get_db)):
     manager = WorkflowManager()
 
     # 模拟图片路径（实际开发中这里由 hardware/camera.py 生成）
-    test_image_path = "data/scans/test_doc.jpg"
+    test_image_path = "data/scans/File03_01.jpg"
 
     success, result = manager.process_new_scan(db, test_image_path)
 
@@ -79,24 +81,76 @@ def sign_document(
 
 # --- 4. 统计看板模块 ---
 
-@router.get("/stats", summary="获取首页统计看板")
+@router.get("/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)):
-    """
-    统计各项指标，供前端图表使用
-    """
-    total = db.query(Document).count()
-    pending = db.query(Document).filter(Document.status == "待签收").count()
-    signed = db.query(Document).filter(Document.status == "已签收").count()
+    # 1. 统计收文总数
+    total_docs = db.query(Document).count()
 
-    # 计算签收率
-    rate = f"{(signed / total * 100):.1f}%" if total > 0 else "0%"
+    # 2. 统计发文总数 (Dispatch 表)
+    total_dispatches = db.query(Dispatch).count()
+
+    # 3. 统计待办事项 (状态为“待签收”的收文)
+    pending_docs = db.query(Document).filter(Document.status == "待签收").count()
 
     return {
         "code": 200,
         "data": {
-            "total_count": total,
-            "pending_count": pending,
-            "signed_count": signed,
-            "completion_rate": rate
+            "total_docs": total_docs,
+            "total_dispatches": total_dispatches,
+            "pending_docs": pending_docs
         }
     }
+
+# --- 5. 删除数据模块 ---
+
+@router.delete("/documents/{doc_id}", summary="删除指定公文")
+def delete_document(doc_id: int, db: Session = Depends(get_db)):
+    # 1. 查找记录
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="未找到该公文记录")
+
+    try:
+        # 2. (可选) 删除对应的物理图片文件
+        if doc.file_path and os.path.exists(doc.file_path):
+            try:
+                os.remove(doc.file_path)
+            except Exception as e:
+                print(f"警告：物理文件删除失败: {e}")
+
+        # 3. 删除数据库记录
+        db.delete(doc)
+        db.commit()
+        return {"code": 200, "msg": "公文及其附件已成功删除"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+
+
+@router.post("/login")
+def login(data: dict, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.get("username")).first()
+    if not user or user.password != data.get("password"):
+        raise HTTPException(status_code=400, detail="用户名或密码错误")
+    return {"code": 200, "msg": "登录成功", "data": {"user_id": user.id, "username": user.username}}
+
+@router.post("/dispatches")
+def create_dispatch(data: dict, db: Session = Depends(get_db)):
+    new_dispatch = Dispatch(
+        doc_num=data.get("doc_num"),
+        title=data.get("title"),
+        receiver_unit=data.get("receiver_unit"),
+        handler=data.get("handler"),
+        date=data.get("date"),
+        remark=data.get("remark")
+    )
+    db.add(new_dispatch)
+    db.commit()
+    return {"code": 200, "msg": "发文登记成功"}
+
+# 别忘了更新原来的 list_documents 接口，增加一个 list_dispatches 接口查看发文
+@router.get("/dispatches")
+def list_dispatches(db: Session = Depends(get_db)):
+    return {"code": 200, "data": db.query(Dispatch).order_by(Dispatch.created_at.desc()).all()}

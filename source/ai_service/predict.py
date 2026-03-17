@@ -6,7 +6,7 @@ class DocumentOCREngine:
     def __init__(self):
         # 初始化 PaddleOCR，使用中文模型
         # use_angle_cls=True 自动旋转纠正，适合高拍仪场景
-        self.ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+        self.ocr = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=False, show_log=False)
         print("AI Service: PaddleOCR Engine Loaded.")
 
     def inference(self, image_bytes):

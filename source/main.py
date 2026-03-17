@@ -6,6 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from sqlalchemy.orm import Session
+from app.models.database import SessionLocal
+from app.models.document import User  # 确保导入了 User 模型
+
 # 1. 自动处理路径依赖
 # 确保项目根目录在 sys.path 中，防止 import app 失败
 basedir = os.path.dirname(os.path.abspath(__file__))
@@ -41,9 +45,25 @@ app.mount("/scans", StaticFiles(directory="data/scans"), name="scans")
 # 6. 数据库初始化钩子
 @app.on_event("startup")
 def on_startup():
-    print("--- 正在检查数据库表结构 ---")
+    print("--- 正在初始化数据库 ---")
     init_db()
-    print("--- 数据库就绪 ---")
+
+    # 自动创建初始账号
+    db: Session = SessionLocal()
+    try:
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if not admin_user:
+            new_user = User(username="admin", password="123456")  # 建议生产环境加密
+            db.add(new_user)
+            db.commit()
+            print("--- 初始账号创建成功 (admin/123456) ---")
+        else:
+            print("--- 管理员账号已存在，跳过创建 ---")
+    except Exception as e:
+        print(f"初始化账号失败: {e}")
+    finally:
+        db.close()
+    print("--- 系统就绪 ---")
 
 # 7. 注册业务路由
 # 所有接口将以 /api/v1 开头
